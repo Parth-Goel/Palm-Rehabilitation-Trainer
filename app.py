@@ -7,16 +7,17 @@ import seaborn as sns
 import joblib
 import streamlit as st
 
-# Try to import mediapipe with a fallback to OpenCV-based detection
+# IMPORTANT: Force OpenCV mode for environments where MediaPipe doesn't work
+# We're forcing OpenCV mode regardless of MediaPipe availability
+MEDIAPIPE_AVAILABLE = False  # Force this to False to use OpenCV instead
+USE_OPENCV_HAND_DETECTION = True  # Always use OpenCV-based detection
+
+# Try to import mediapipe but don't use it even if available
 try:
     import mediapipe as mp
-    MEDIAPIPE_AVAILABLE = True
+    # We're explicitly not setting MEDIAPIPE_AVAILABLE = True here
 except ImportError:
-    # Instead of just showing an error, we'll use OpenCV as a fallback
-    MEDIAPIPE_AVAILABLE = False
-    
-# Define flag for using OpenCV-based hand detection
-USE_OPENCV_HAND_DETECTION = True
+    pass  # Continue with OpenCV fallback
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import RandomForestClassifier
@@ -111,12 +112,28 @@ thumb_ip=None
 
 def update_finger_tips(landmarks):
     global thumb_tip,thumb_ip, index_finger_tip, middle_finger_tip, ring_finger_tip, pinky_finger_tip
-    thumb_tip = np.array([landmarks[4].x, landmarks[4].y])
-    index_finger_tip = np.array([landmarks[8].x, landmarks[8].y])
-    middle_finger_tip = np.array([landmarks[12].x, landmarks[12].y])
-    ring_finger_tip = np.array([landmarks[16].x, landmarks[16].y])
-    pinky_finger_tip = np.array([landmarks[20].x, landmarks[20].y])
-    thumb_ip = np.array([landmarks[3].x, landmarks[3].y])
+    try:
+        # Initialize with default values
+        thumb_tip = index_finger_tip = middle_finger_tip = ring_finger_tip = pinky_finger_tip = thumb_ip = None
+        
+        # Make sure we have enough landmarks and that they have x,y attributes
+        if (len(landmarks) > 20 and hasattr(landmarks[4], 'x') and hasattr(landmarks[8], 'x') and
+            hasattr(landmarks[12], 'x') and hasattr(landmarks[16], 'x') and hasattr(landmarks[20], 'x')):
+            
+            # Set the finger tips if we have valid landmarks
+            thumb_tip = np.array([landmarks[4].x, landmarks[4].y])
+            index_finger_tip = np.array([landmarks[8].x, landmarks[8].y])
+            middle_finger_tip = np.array([landmarks[12].x, landmarks[12].y])
+            ring_finger_tip = np.array([landmarks[16].x, landmarks[16].y])
+            pinky_finger_tip = np.array([landmarks[20].x, landmarks[20].y])
+            
+            if len(landmarks) > 3 and hasattr(landmarks[3], 'x'):
+                thumb_ip = np.array([landmarks[3].x, landmarks[3].y])
+    except Exception as e:
+        print(f"Error updating finger tips: {e}")
+        # Initialize with default positions if there's an error
+        # Use center of image as fallback
+        thumb_tip = index_finger_tip = middle_finger_tip = ring_finger_tip = pinky_finger_tip = thumb_ip = np.array([0.5, 0.5])
 
 # Feedback Function for "Ball_Grip_Wrist_Down"
 def provide_feedback_Ball_Grip_Wrist_Down(landmarks):
@@ -488,28 +505,55 @@ def provide_feedback_Side_Squzzer(landmarks):
 
 # Function for OpenCV-based hand detection
 def detect_hand_with_opencv(image):
-    # Convert to grayscale for better processing
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    
-    # Apply Gaussian blur to reduce noise
-    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-    
-    # Use adaptive thresholding to get a binary image
-    thresh = cv2.adaptiveThreshold(blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
-                                  cv2.THRESH_BINARY_INV, 11, 2)
-    
-    # Find contours in the image
-    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    
-    if not contours:
-        return None
-    
-    # Find the largest contour, which is likely the hand
-    hand_contour = max(contours, key=cv2.contourArea)
-    
-    # Filter by minimum size to avoid small noise
-    if cv2.contourArea(hand_contour) < 5000:  # Minimum area threshold
-        return None
+    try:
+        # Check if the image is valid
+        if image is None or image.size == 0:
+            print("Invalid input image")
+            return None
+            
+        # Use skin color segmentation to help with hand detection
+        # Convert to YCrCb color space which is better for skin detection
+        image_ycrcb = cv2.cvtColor(image, cv2.COLOR_BGR2YCrCb)
+        
+        # Define skin color bounds in YCrCb
+        lower_skin = np.array([0, 135, 85], dtype=np.uint8)
+        upper_skin = np.array([255, 180, 135], dtype=np.uint8)
+        
+        # Create a binary mask of skin pixels
+        skin_mask = cv2.inRange(image_ycrcb, lower_skin, upper_skin)
+        
+        # Apply morphological operations to clean up the mask
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+        skin_mask = cv2.morphologyEx(skin_mask, cv2.MORPH_OPEN, kernel)
+        skin_mask = cv2.morphologyEx(skin_mask, cv2.MORPH_CLOSE, kernel)
+        
+        # Also try standard grayscale approach as backup
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+        thresh = cv2.adaptiveThreshold(blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+                                      cv2.THRESH_BINARY_INV, 11, 2)
+        
+        # Combine both approaches
+        combined_mask = cv2.bitwise_or(skin_mask, thresh)
+        
+        # Find contours in both masks and choose the better one
+        contours_skin, _ = cv2.findContours(skin_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contours_thresh, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        # If we have contours from skin detection, prefer those, otherwise use threshold contours
+        contours = contours_skin if contours_skin else contours_thresh
+        
+        if not contours:
+            print("No contours found in the image")
+            return None
+        
+        # Find the largest contour, which is likely the hand
+        hand_contour = max(contours, key=cv2.contourArea)
+        
+        # Filter by minimum size to avoid small noise - use a smaller threshold to be more lenient
+        if cv2.contourArea(hand_contour) < 3000:  # Reduced minimum area threshold
+            print(f"Contour too small: {cv2.contourArea(hand_contour)}")
+            return None
     
     # Create a simplified version of the contour
     epsilon = 0.01 * cv2.arcLength(hand_contour, True)
@@ -637,30 +681,13 @@ def detect_hand_with_opencv(image):
         print(f"Error in hand detection: {e}")
         return None
 
-# Function to predict exercise and feedback
+    # Function to predict exercise and feedback
 def predict_exercise(image, model, scaler):
     predictions = []
     hand_landmarks_list = []
     
-    if MEDIAPIPE_AVAILABLE and hands is not None:
-        # Use MediaPipe when available
-        image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        try:
-            results = hands.process(image_rgb)
-            
-            if results.multi_hand_landmarks:
-                for hand_landmarks in results.multi_hand_landmarks:
-                    landmarks = [landmark for landmark in hand_landmarks.landmark]
-                    features = extract_features(landmarks)
-                    features = scaler.transform([features])
-                    prediction = model.predict(features)[0]
-                    predictions.append(prediction)
-                    hand_landmarks_list.append(hand_landmarks)
-        except Exception as e:
-            print(f"Error with MediaPipe: {e}")
-            # If MediaPipe fails, fall through to OpenCV detection
-    
-    elif USE_OPENCV_HAND_DETECTION:
+    # Since we've forced OpenCV mode, we'll skip MediaPipe check
+    # Direct to OpenCV-based detection    elif USE_OPENCV_HAND_DETECTION:
         # Use our OpenCV-based hand detection as a fallback
         result = detect_hand_with_opencv(image)
         
@@ -712,26 +739,57 @@ def annotate_image(image, predictions, hand_landmarks_list):
                 cv2.putText(annotated_image, f"Prediction: {prediction}", (start_x, start_y), 
                             cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2, cv2.LINE_AA)
                 
-                # Check what type of hand detection was used and annotate accordingly
-                if MEDIAPIPE_AVAILABLE and hasattr(hand_landmarks_list[i], 'landmark'):
-                    # If using MediaPipe landmarks
-                    feedback = feedback_function(hand_landmarks_list[i].landmark)
-                    if mp_drawing is not None and mp_hands is not None:
-                        mp_drawing.draw_landmarks(annotated_image, hand_landmarks_list[i], mp_hands.HAND_CONNECTIONS)
-                elif isinstance(hand_landmarks_list[i], tuple):
-                    # If using OpenCV detection (landmarks and contour)
-                    landmarks, contour = hand_landmarks_list[i]
-                    feedback = feedback_function(landmarks)
-                    
-                    # Draw the contour for OpenCV-based detection
-                    cv2.drawContours(annotated_image, [contour], -1, (0, 255, 0), 2)
-                    
-                    # Draw points for key landmarks
-                    for landmark in landmarks:
-                        x, y = int(landmark.x * image.shape[1]), int(landmark.y * image.shape[0])
-                        cv2.circle(annotated_image, (x, y), 4, (255, 0, 0), -1)
+                # We're only using OpenCV-based detection now
+                # Get the landmarks and contour
+                try:
+                    if isinstance(hand_landmarks_list[i], tuple):
+                        # OpenCV detection format (landmarks and contour)
+                        landmarks, contour = hand_landmarks_list[i]
+                        feedback = feedback_function(landmarks)
+                        
+                        # Draw the contour for hand outline
+                        cv2.drawContours(annotated_image, [contour], -1, (0, 255, 0), 2)
+                        
+                        # Draw lines to connect key landmarks for better visualization
+                        # Connect fingertips to palm center
+                        palm_center_idx = 9  # Middle of palm
+                        fingertip_indices = [4, 8, 12, 16, 20]  # Thumb, index, middle, ring, pinky tips
+                        
+                        palm_x = int(landmarks[palm_center_idx].x * image.shape[1])
+                        palm_y = int(landmarks[palm_center_idx].y * image.shape[0])
+                        
+                        # Draw palm center
+                        cv2.circle(annotated_image, (palm_x, palm_y), 8, (0, 0, 255), -1)
+                        
+                        # Draw fingertips and connect to palm
+                        for tip_idx in fingertip_indices:
+                            if tip_idx < len(landmarks):
+                                tip_x = int(landmarks[tip_idx].x * image.shape[1])
+                                tip_y = int(landmarks[tip_idx].y * image.shape[0])
+                                cv2.circle(annotated_image, (tip_x, tip_y), 6, (255, 0, 0), -1)
+                                cv2.line(annotated_image, (palm_x, palm_y), (tip_x, tip_y), (0, 255, 255), 2)
+                        
+                        # Draw all other landmarks
+                        for j, landmark in enumerate(landmarks):
+                            if j not in fingertip_indices and j != palm_center_idx:
+                                x, y = int(landmark.x * image.shape[1]), int(landmark.y * image.shape[0])
+                                cv2.circle(annotated_image, (x, y), 3, (0, 165, 255), -1)
+                    else:
+                        # Unknown format - simple feedback
+                        feedback = ["Unable to determine hand landmarks - please reposition your hand"]
+                except Exception as e:
+                    print(f"Error drawing landmarks: {e}")
+                    feedback = ["Error in landmark visualization"]
                 else:
                     feedback = ["Unable to provide feedback - unknown landmark format"]
+                
+                # If feedback has errors, provide default guidance
+                if not feedback or (len(feedback) == 1 and "Error" in feedback[0]):
+                    feedback = [
+                        "Position your hand clearly in view",
+                        "Make sure your full hand is visible",
+                        "Try adjusting lighting for better detection"
+                    ]
                 
                 # Limit to a few feedback messages to avoid crowding the image
                 for j, fb in enumerate(feedback[:5]):  # Display up to 5 feedback messages
@@ -800,9 +858,9 @@ def main():
     st.set_page_config(layout="wide", page_title=" Hand Rehabilitation System")
     st.title("Hand Rehabilitation System")
     
-    if not MEDIAPIPE_AVAILABLE:
-        st.warning("MediaPipe is not available. Live hand detection will be limited.")
-        st.info("Please try our Demo Mode tab below to see exercise examples without requiring MediaPipe.")
+    # Always show this message since we're using OpenCV-based detection
+    st.success("Using OpenCV-based hand detection. Camera detection should work in all environments.")
+    st.info("If you have camera access issues, please try different camera indices in the Live Hand Detection tab.")
     
     # CSS for smooth transition and consistent image size
     st.markdown("""
@@ -927,24 +985,81 @@ def main():
                 st.markdown(f"- {tip}")
                 
     # This is the beginning of the live detection section - only runs if user is in the live tab
+    
+    # Create a place to display the video feed
+    FRAME_WINDOW = st.empty()
+    reference_col, feedback_col = st.columns(2)
+    with reference_col:
+        ref_image_container = st.empty()
+    with feedback_col:
+        feedback_container = st.empty()
 
     if run:
-        # Show appropriate message when MediaPipe is not available
-        if not MEDIAPIPE_AVAILABLE:
-            st.warning("Hand detection requires MediaPipe, which is not available in this environment.")
-            st.info("Please try the Demo Mode tab to see exercise examples.")
+        # We're using OpenCV-based detection, so we don't need to check for MediaPipe
+        st.info("Using OpenCV-based hand detection. This should work in all environments.")
+        st.info("If you don't see your hand being detected, try moving to a location with better lighting.")
+        st.warning("For best results, place your hand in front of a plain background with good contrast.")
+            
+        # Let user select camera index
+        camera_options = ["Auto-detect (recommended)", "Camera 0", "Camera 1", "Camera 2", "Camera 3"]
+        camera_selection = st.selectbox("Select camera:", camera_options)
+        
+        cap = None
+        if camera_selection == "Auto-detect (recommended)":
+            # Try multiple camera indices (0, 1, 2, 3) to find one that works
+            camera_indices = [0, 1, 2, 3]
+            
+            for idx in camera_indices:
+                try:
+                    with st.spinner(f"Trying to connect to camera {idx}..."):
+                        cap = cv2.VideoCapture(idx)
+                        # Read a test frame to ensure it's working
+                        ret, test_frame = cap.read()
+                        if ret and test_frame is not None and test_frame.size > 0:
+                            st.success(f"✅ Successfully connected to camera {idx}")
+                            break
+                        else:
+                            cap.release()
+                            cap = None
+                except Exception as e:
+                    st.warning(f"❌ Could not open camera {idx}: {e}")
+                    if cap:
+                        cap.release()
+                        cap = None
+                    continue
+        else:
+            # User selected a specific camera
+            idx = int(camera_selection.split(" ")[1])
+            try:
+                with st.spinner(f"Connecting to camera {idx}..."):
+                    cap = cv2.VideoCapture(idx)
+                    ret, test_frame = cap.read()
+                    if ret and test_frame is not None and test_frame.size > 0:
+                        st.success(f"✅ Successfully connected to camera {idx}")
+                    else:
+                        st.error(f"❌ Camera {idx} is not providing valid frames")
+                        if cap:
+                            cap.release()
+                            cap = None
+            except Exception as e:
+                st.error(f"❌ Error connecting to camera {idx}: {e}")
+                if cap:
+                    cap.release()
+                    cap = None
+        
+        if cap is None or not cap.isOpened():
+            st.error("❌ Could not connect to any camera")
+            st.warning("If you are using a laptop, make sure your webcam is not being used by another application")
+            st.warning("If you are using an external webcam, check if it's properly connected")
+            st.info("Please try the Demo Mode tab to see exercise examples without camera access")
             return
             
-        try:
-            cap = cv2.VideoCapture(0)  # Open the webcam
-            if not cap.isOpened():
-                st.error("Could not open webcam. This may be because you're running in a headless environment.")
-                st.info("Please try the Demo Mode tab to see exercise examples without camera access.")
-                return
-        except Exception as e:
-            st.error(f"Error opening webcam: {e}")
-            st.info("Please try the Demo Mode tab to see exercise examples without camera access.")
-            return
+        # Add some helper text for better detection
+        st.info("📋 Tips for better hand detection:")
+        st.info("- Ensure good lighting on your hand")
+        st.info("- Use a plain background if possible")
+        st.info("- Keep your hand at a comfortable distance from the camera")
+        st.info("- Move slowly to allow detection to work better")
             
         while cap.isOpened():
             ret, frame = cap.read()

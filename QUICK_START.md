@@ -44,14 +44,16 @@ streamlit run app.py
 ## 🔧 If Something Goes Wrong
 
 **Camera not working?**
+- Use the camera selection dropdown to try different camera indices (0, 1, 2, 3)
+- Check if your webcam is being used by another application
 - Try refreshing the page
-- Check browser camera permissions
-- Try `cv2.VideoCapture(0)` instead of `cv2.VideoCapture(1)` in app.py
+- Ensure your browser has camera permissions enabled
 
-**MediaPipe not working?**
-- The app includes an OpenCV-based fallback that will automatically activate
-- You'll see "Using OpenCV (fallback mode)" displayed on the image when this happens
-- Performance may be reduced but core functionality will remain
+**Hand detection not working?**
+- Make sure your hand is clearly visible in the camera
+- Position yourself in good lighting
+- Use a plain background for better detection
+- Move your hand slowly to help the detection algorithm
 
 **Import errors?**
 - Make sure virtual environment is activated
