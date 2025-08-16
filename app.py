@@ -4,9 +4,16 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-import mediapipe as mp
 import joblib
 import streamlit as st
+
+# Try to import mediapipe with a fallback message
+try:
+    import mediapipe as mp
+    MEDIAPIPE_AVAILABLE = True
+except ImportError:
+    st.error("MediaPipe could not be imported. Some functionality will be limited.")
+    MEDIAPIPE_AVAILABLE = False
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import RandomForestClassifier
@@ -54,9 +61,15 @@ def plot_confusion_matrix(y_true, y_pred, class_names):
     plt.close()
     st.image(CONFUSION_MATRIX_FILE)
 
-mp_hands = mp.solutions.hands
-mp_drawing = mp.solutions.drawing_utils
-hands = mp_hands.Hands(static_image_mode=False, max_num_hands=2, min_detection_confidence=0.7, min_tracking_confidence=0.7)
+# Initialize MediaPipe if available
+if MEDIAPIPE_AVAILABLE:
+    mp_hands = mp.solutions.hands
+    mp_drawing = mp.solutions.drawing_utils
+    hands = mp_hands.Hands(static_image_mode=False, max_num_hands=2, min_detection_confidence=0.7, min_tracking_confidence=0.7)
+else:
+    mp_hands = None
+    mp_drawing = None
+    hands = None
 
 def extract_features(landmarks):
     features = []
@@ -472,6 +485,10 @@ def provide_feedback_Side_Squzzer(landmarks):
 
 # Function to predict exercise and feedback
 def predict_exercise(image, model, scaler):
+    if not MEDIAPIPE_AVAILABLE:
+        st.error("MediaPipe is not available. Cannot process hand landmarks.")
+        return [], []
+    
     image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
     results = hands.process(image_rgb)
     predictions = []
@@ -489,6 +506,12 @@ def predict_exercise(image, model, scaler):
 # Annotate the image with predictions and feedback
 def annotate_image(image, predictions, hand_landmarks_list):
     annotated_image = image.copy()
+    if not MEDIAPIPE_AVAILABLE:
+        # Add a message to the image if MediaPipe is not available
+        cv2.putText(annotated_image, "MediaPipe not available - hand detection disabled", 
+                    (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2, cv2.LINE_AA)
+        return annotated_image
+        
     if predictions:
         for i, prediction in enumerate(predictions):
             feedback_function_name = f'provide_feedback_{prediction.replace("-", "_")}'
@@ -564,6 +587,10 @@ def resize_image(image_path, width, height):
 def main():
     st.set_page_config(layout="wide", page_title=" Hand Rehabilitation System")
     st.title("Hand Rehabilitation System")
+    
+    if not MEDIAPIPE_AVAILABLE:
+        st.error("MediaPipe is not available. Some functionality may be limited.")
+        st.info("This application requires MediaPipe for hand tracking. Please try on a different environment or contact support.")
     
     # CSS for smooth transition and consistent image size
     st.markdown("""
