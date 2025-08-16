@@ -676,7 +676,7 @@ def detect_hand_with_opencv(image):
                     normalized_landmarks[idx].y = far_y/h_img
         
         return normalized_landmarks, hand_contour
-        
+    
     except Exception as e:
         print(f"Error in hand detection: {e}")
         return None
