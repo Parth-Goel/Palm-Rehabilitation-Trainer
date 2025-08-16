@@ -589,8 +589,8 @@ def main():
     st.title("Hand Rehabilitation System")
     
     if not MEDIAPIPE_AVAILABLE:
-        st.error("MediaPipe is not available. Some functionality may be limited.")
-        st.info("This application requires MediaPipe for hand tracking. Please try on a different environment or contact support.")
+        st.warning("MediaPipe is not available. Live hand detection will be limited.")
+        st.info("Please try our Demo Mode tab below to see exercise examples without requiring MediaPipe.")
     
     # CSS for smooth transition and consistent image size
     st.markdown("""
@@ -630,33 +630,108 @@ def main():
     st.video(video_path)
     st.markdown('</div>', unsafe_allow_html=True)
 
-    st.header("Live Hand Detection")
+    # Add a demo mode section
+    st.header("Exercise Examples")
     
-    # Create layout containers
-    col1, col2 = st.columns([2, 1])
-    with col1:
-        FRAME_WINDOW = st.image([])
-    with col2:
-        st.subheader("Reference Image")
-        default_image = resize_image("all_exe.png", width=450, height=350)  
-        exercise_image = st.image(default_image, caption="All exercises")  
+    # Create tabs for Live Detection and Demo Mode
+    live_tab, demo_tab = st.tabs(["Live Hand Detection", "Demo Mode (No Camera Required)"])
     
-    # Load the model and scaler
-    model, scaler = load_or_train_model()
+    with live_tab:
+        # Create layout containers
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            FRAME_WINDOW = st.image([])
+        with col2:
+            st.subheader("Reference Image")
+            default_image = resize_image("all_exe.png", width=450, height=350)  
+            exercise_image = st.image(default_image, caption="All exercises")  
+        
+        # Load the model and scaler
+        model, scaler = load_or_train_model()
 
-    # Checkbox to start detection
-    run = st.checkbox('Run Hand Detection')
+        # Checkbox to start detection
+        run = st.checkbox('Run Hand Detection')
+    
+    with demo_tab:
+        st.subheader("Sample Exercises")
+        st.write("This demo mode allows you to see exercise examples without requiring a camera.")
+        
+        # Create demo exercise selection
+        demo_exercise = st.selectbox(
+            "Select an exercise to view:",
+            ["Ball_Grip_Wrist_Down", "Ball_Grip_Wrist_Up", "Pinch", 
+             "Thumb_Extend", "Opposition", "Extend_Out", "Finger_Bend", "Side_Squzzer"]
+        )
+        
+        col1_demo, col2_demo = st.columns([2, 1])
+        
+        with col1_demo:
+            # Show the selected exercise image
+            image_path = f"images/{demo_exercise}.jpg"
+            try:
+                demo_img = resize_image(image_path, width=450, height=350)
+                if demo_img:
+                    st.image(demo_img, caption=f"Example: {demo_exercise}", use_column_width=True)
+                else:
+                    st.error(f"Could not load image for {demo_exercise}")
+            except Exception:
+                # Fallback to png if jpg doesn't exist
+                try:
+                    image_path = f"images/{demo_exercise}.png"
+                    demo_img = resize_image(image_path, width=450, height=350)
+                    if demo_img:
+                        st.image(demo_img, caption=f"Example: {demo_exercise}", use_column_width=True)
+                    else:
+                        st.error(f"Could not load image for {demo_exercise}")
+                except Exception as e:
+                    st.error(f"Error loading image: {e}")
+        
+        with col2_demo:
+            st.subheader("Exercise Description")
+            descriptions = {
+                "Ball_Grip_Wrist_Down": "Squeeze a small ball with wrist facing down to improve grip strength.",
+                "Ball_Grip_Wrist_Up": "Squeeze a small ball with wrist facing up for alternative grip exercise.",
+                "Pinch": "Pinch exercise to improve fine motor control between thumb and index finger.",
+                "Thumb_Extend": "Extend and stretch your thumb to improve mobility.",
+                "Opposition": "Touch each fingertip with your thumb in sequence for coordination.",
+                "Extend_Out": "Extend fingers outward to stretch and improve flexibility.",
+                "Finger_Bend": "Practice bending fingers in controlled motion.",
+                "Side_Squzzer": "Side squeezing motion to target different grip muscles."
+            }
+            st.write(descriptions.get(demo_exercise, "No description available."))
+            
+            st.subheader("Tips")
+            tips = {
+                "Ball_Grip_Wrist_Down": ["Maintain even pressure across all fingers", "Don't strain your wrist", "Hold for 3-5 seconds"],
+                "Ball_Grip_Wrist_Up": ["Keep wrist straight", "Focus on finger pressure", "Repeat 10-15 times"],
+                "Pinch": ["Use controlled movements", "Maintain proper form", "Focus on precision"],
+                "Thumb_Extend": ["Don't overextend", "Move slowly", "Feel the stretch in thumb muscles"],
+                "Opposition": ["Ensure full contact between fingertips", "Maintain steady pace", "Keep hand relaxed between touches"],
+                "Extend_Out": ["Stretch fingers fully", "Don't hyperextend joints", "Keep movements smooth"],
+                "Finger_Bend": ["Bend at all joints", "Control the motion", "Focus on each finger individually"],
+                "Side_Squzzer": ["Apply even pressure", "Keep wrist neutral", "Focus on side muscles"]
+            }
+            for tip in tips.get(demo_exercise, ["No specific tips available."]):
+                st.markdown(f"- {tip}")
+                
+    # This is the beginning of the live detection section - only runs if user is in the live tab
 
     if run:
+        # Show appropriate message when MediaPipe is not available
+        if not MEDIAPIPE_AVAILABLE:
+            st.warning("Hand detection requires MediaPipe, which is not available in this environment.")
+            st.info("Please try the Demo Mode tab to see exercise examples.")
+            return
+            
         try:
             cap = cv2.VideoCapture(0)  # Open the webcam
             if not cap.isOpened():
                 st.error("Could not open webcam. This may be because you're running in a headless environment.")
-                st.info("This application requires camera access to function properly. Please try on a device with a camera.")
+                st.info("Please try the Demo Mode tab to see exercise examples without camera access.")
                 return
         except Exception as e:
             st.error(f"Error opening webcam: {e}")
-            st.info("This application requires camera access to function properly. Please try on a device with a camera.")
+            st.info("Please try the Demo Mode tab to see exercise examples without camera access.")
             return
             
         while cap.isOpened():
