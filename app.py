@@ -648,7 +648,17 @@ def main():
     run = st.checkbox('Run Hand Detection')
 
     if run:
-        cap = cv2.VideoCapture(0)  # Open the webcam
+        try:
+            cap = cv2.VideoCapture(0)  # Open the webcam
+            if not cap.isOpened():
+                st.error("Could not open webcam. This may be because you're running in a headless environment.")
+                st.info("This application requires camera access to function properly. Please try on a device with a camera.")
+                return
+        except Exception as e:
+            st.error(f"Error opening webcam: {e}")
+            st.info("This application requires camera access to function properly. Please try on a device with a camera.")
+            return
+            
         while cap.isOpened():
             ret, frame = cap.read()
             if not ret:
@@ -672,7 +682,11 @@ def main():
                     exercise_image.image(default_image, caption="No reference available", use_column_width=False)
         
         cap.release()
-        cv2.destroyAllWindows()
+        # Use try/except to handle the case when destroyAllWindows is not available (headless environments)
+        try:
+            cv2.destroyAllWindows()
+        except cv2.error:
+            st.warning("Running in headless mode. GUI windows not available.")
 
 if __name__ == "__main__":
     main()
