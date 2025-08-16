@@ -554,10 +554,10 @@ def detect_hand_with_opencv(image):
         if cv2.contourArea(hand_contour) < 3000:  # Reduced minimum area threshold
             print(f"Contour too small: {cv2.contourArea(hand_contour)}")
             return None
-    
-    # Create a simplified version of the contour
-    epsilon = 0.01 * cv2.arcLength(hand_contour, True)
-    approx_hand = cv2.approxPolyDP(hand_contour, epsilon, True)
+        
+        # Create a simplified version of the contour
+        epsilon = 0.01 * cv2.arcLength(hand_contour, True)
+        approx_hand = cv2.approxPolyDP(hand_contour, epsilon, True)
     
     try:
         # Get the bounding box of the contour
@@ -687,8 +687,9 @@ def predict_exercise(image, model, scaler):
     hand_landmarks_list = []
     
     # Since we've forced OpenCV mode, we'll skip MediaPipe check
-    # Direct to OpenCV-based detection    elif USE_OPENCV_HAND_DETECTION:
-        # Use our OpenCV-based hand detection as a fallback
+    # Direct to OpenCV-based detection
+    if USE_OPENCV_HAND_DETECTION:
+        # Use our OpenCV-based hand detection
         result = detect_hand_with_opencv(image)
         
         if result:
