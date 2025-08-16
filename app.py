@@ -850,6 +850,30 @@ EXERCISE_IMAGES = {
     "Side_Squzzer": "images/Side_Squzzer.png"
 }
 
+# Function to detect cloud environment
+def is_cloud_environment():
+    """Detect if we're running in a cloud environment"""
+    import os
+    import socket
+    
+    # Check for environment variables commonly set in cloud environments
+    cloud_env_vars = ['STREAMLIT_SHARING', 'STREAMLIT_SERVER_PORT', 'STREAMLIT_SERVER_HEADLESS', 
+                       'HEROKU_APP_ID', 'DYNO', 'PORT', 'KUBERNETES_SERVICE_HOST']
+    
+    for env_var in cloud_env_vars:
+        if env_var in os.environ:
+            return True
+    
+    # Check if running in a container or virtual environment
+    try:
+        with open('/proc/1/cgroup', 'r') as f:
+            if 'docker' in f.read() or 'kubepods' in f.read():
+                return True
+    except (IOError, FileNotFoundError):
+        pass
+        
+    return False
+
 # Function to autoplay video in Streamlit
 def autoplay_video(video_path):
     with open(video_path, "rb") as video_file:
@@ -927,10 +951,32 @@ def main():
     # Add a demo mode section
     st.header("Exercise Examples")
     
-    # Create tabs for Live Detection and Demo Mode
-    live_tab, demo_tab = st.tabs(["Live Hand Detection", "Demo Mode (No Camera Required)"])
+    # Create tabs for Live Detection and Demo Mode with session state support
+    # Initialize session state for tab tracking if not exist
+    if "active_tab" not in st.session_state:
+        st.session_state.active_tab = "Live Hand Detection"
+        
+    # Get any URL parameters that might specify the tab
+    query_params = st.experimental_get_query_params()
+    if "tab" in query_params:
+        st.session_state.active_tab = query_params["tab"][0]
     
-    with live_tab:
+    # Define the tabs
+    tabs = ["Live Hand Detection", "Demo Mode (No Camera Required)"]
+    
+    # Use selectbox instead of tabs for better stability in cloud environments
+    selected_tab = st.radio("Choose Mode:", tabs, index=tabs.index(st.session_state.active_tab), horizontal=True)
+    
+    # Update session state when tab changes
+    if selected_tab != st.session_state.active_tab:
+        st.session_state.active_tab = selected_tab
+        st.experimental_set_query_params(tab=selected_tab)
+    
+    # Draw divider
+    st.markdown("---")
+    
+    # Live Detection Tab
+    if selected_tab == "Live Hand Detection":
         # Create layout containers
         col1, col2 = st.columns([2, 1])
         with col1:
@@ -946,7 +992,8 @@ def main():
         # Checkbox to start detection
         run = st.checkbox('Run Hand Detection')
     
-    with demo_tab:
+    # Demo Mode Tab
+    elif selected_tab == "Demo Mode (No Camera Required)":
         st.subheader("Sample Exercises")
         st.write("This demo mode allows you to see exercise examples without requiring a camera.")
         
@@ -1019,14 +1066,57 @@ def main():
         feedback_container = st.empty()
 
     if run:
+        # Add initialization for session state to track retries
+        if "retry_camera" not in st.session_state:
+            st.session_state.retry_camera = 0
+        
         # We're using OpenCV-based detection, so we don't need to check for MediaPipe
         st.info("Using OpenCV-based hand detection. This should work in all environments.")
         st.info("If you don't see your hand being detected, try moving to a location with better lighting.")
         st.warning("For best results, place your hand in front of a plain background with good contrast.")
+        
+        # Add warning for cloud environments
+        st.warning("⚠️ Note: Camera access may be restricted in some cloud environments due to security settings.")
+        
+        # Check if we might be in a cloud environment
+        is_cloud_env = is_cloud_environment()
+        
+        if is_cloud_env:
+            st.warning("📌 Detected cloud environment: Camera access may be limited.")
+            st.info("For the best experience with camera detection, consider running this application locally.")
+            
+            # Add specific instructions for cloud environment
+            with st.expander("� Cloud Environment Camera Access Instructions"):
+                st.markdown("""
+                ### Accessing Camera in Cloud Environments
+                
+                1. **Browser Permissions**: When prompted, make sure to allow camera access
+                2. **Use Chrome or Edge**: These browsers have better compatibility with webcams
+                3. **HTTPS Required**: Most browsers only allow camera access over secure connections (https://)
+                4. **Alternative**: If camera detection doesn't work, use the Demo Mode tab instead
+                
+                Some cloud deployments have security restrictions that prevent camera access.
+                """)
+                
+            # Add a more prominent link to demo mode
+            demo_col1, demo_col2 = st.columns([1, 2])
+            with demo_col1:
+                if st.button("👉 Switch to Demo Mode"):
+                    st.session_state.active_tab = "Demo Mode"
+                    st.experimental_set_query_params(tab="Demo Mode")
+                    # We'll use this workaround instead of experimental_rerun
+                    st.markdown("""
+                    <meta http-equiv="refresh" content="1">
+                    """, unsafe_allow_html=True)
+            with demo_col2:
+                st.info("Demo Mode shows exercise examples without requiring camera access")
             
         # Let user select camera index
         camera_options = ["Auto-detect (recommended)", "Camera 0", "Camera 1", "Camera 2", "Camera 3"]
         camera_selection = st.selectbox("Select camera:", camera_options)
+        
+        # Use session state to force refresh on retry
+        retry_count = st.session_state.retry_camera
         
         cap = None
         if camera_selection == "Auto-detect (recommended)":
@@ -1117,25 +1207,80 @@ def main():
         
         if cap is None or not cap.isOpened():
             st.error("❌ Could not connect to any camera")
-            st.warning("If you are using a laptop, make sure your webcam is not being used by another application")
-            st.warning("If you are using an external webcam, check if it's properly connected")
             
-            # Add more troubleshooting information in an expandable section
-            with st.expander("📋 Camera Troubleshooting Tips"):
-                st.markdown("""
-                1. **Restart your browser or Streamlit application** - Sometimes the camera gets locked by a previous session
-                2. **Check camera permissions** - Make sure your browser has permission to access the camera
-                3. **Try a different browser** - Some browsers handle camera access better than others
-                4. **Close other applications** - Close applications like Zoom, Teams, or Skype that might be using the camera
-                5. **Check device manager** - On Windows, check if your camera is working properly in Device Manager
-                6. **Update camera drivers** - Outdated drivers can cause connection issues
-                7. **Try an external webcam** - If built-in webcam isn't working, try connecting an external one
-                """)
-            
-            # Button to try again with camera detection
-            if st.button("🔄 Try Again"):
-                st.experimental_rerun()
+            # Different handling based on environment
+            if is_cloud_environment():
+                st.warning("⚠️ Camera access in cloud environments may be restricted due to security settings")
                 
+                # Special handling for cloud environments
+                st.markdown("""
+                ### Camera Access Issues in Cloud Deployment
+                
+                The application is currently running in a cloud environment, where camera access is often restricted 
+                due to security limitations of the deployment platform.
+                
+                #### Options:
+                """)
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.info("**Option 1: Try Demo Mode**")
+                    if st.button("👉 Switch to Demo Mode", key="demo_btn"):
+                        # Safer way to change tabs without experimental_rerun
+                        st.session_state.active_tab = "Demo Mode"
+                        # Use meta refresh as a workaround
+                        st.markdown("""
+                        <meta http-equiv="refresh" content="1">
+                        """, unsafe_allow_html=True)
+                        
+                with col2:
+                    st.info("**Option 2: Run Locally**")
+                    with st.expander("How to run locally"):
+                        st.markdown("""
+                        1. Clone the repository: `git clone https://github.com/Parth-Goel/Palm-Rehabilitation-Trainer.git`
+                        2. Install dependencies: `pip install -r requirements.txt`
+                        3. Run the app: `streamlit run app.py`
+                        """)
+                
+                # Additional browser-specific troubleshooting for cloud
+                with st.expander("Browser-specific troubleshooting"):
+                    st.markdown("""
+                    - **Chrome/Edge**: Go to Settings → Privacy and Security → Site Settings → Camera
+                    - **Firefox**: Go to Settings → Privacy & Security → Permissions → Camera
+                    - **Safari**: Go to Preferences → Websites → Camera
+                    
+                    Make sure to allow camera access for this site.
+                    """)
+            else:
+                # Local environment troubleshooting
+                st.warning("If you are using a laptop, make sure your webcam is not being used by another application")
+                st.warning("If you are using an external webcam, check if it's properly connected")
+                
+                # Add more troubleshooting information in an expandable section
+                with st.expander("📋 Camera Troubleshooting Tips"):
+                    st.markdown("""
+                    1. **Restart your browser or Streamlit application** - Sometimes the camera gets locked by a previous session
+                    2. **Check camera permissions** - Make sure your browser has permission to access the camera
+                    3. **Try a different browser** - Some browsers handle camera access better than others
+                    4. **Close other applications** - Close applications like Zoom, Teams, or Skype that might be using the camera
+                    5. **Check device manager** - On Windows, check if your camera is working properly in Device Manager
+                    6. **Update camera drivers** - Outdated drivers can cause connection issues
+                    7. **Try an external webcam** - If built-in webcam isn't working, try connecting an external one
+                    """)
+                
+                # Button to try again with camera detection - using session state instead of experimental_rerun
+                if st.button("🔄 Try Again", key="retry_btn"):
+                    # Use session state for re-running instead of experimental_rerun
+                    if "retry_camera" not in st.session_state:
+                        st.session_state.retry_camera = 0
+                    st.session_state.retry_camera += 1
+                    # Use meta refresh as a safer alternative to experimental_rerun
+                    st.markdown("""
+                    <meta http-equiv="refresh" content="1">
+                    """, unsafe_allow_html=True)
+                    st.info("Retrying camera connection...")
+            
             st.info("Please try the Demo Mode tab to see exercise examples without camera access")
             return
             
