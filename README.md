@@ -15,7 +15,7 @@ A real-time hand exercise detection and feedback system using computer vision an
 ## 📋 Supported Exercises
 
 1. **Ball Grip Wrist Down** - Ball squeezing with wrist in downward position
-2. **Ball Grip Wrist Up** - Ball squeezing with wrist in upward position  
+2. **Ball Grip Wrist Up** - Ball squeezing with wrist in upward position
 3. **Pinch** - Thumb and index finger pinch exercise
 4. **Thumb Extend** - Thumb extension and opposition exercises
 5. **Opposition** - Thumb opposition to other fingers
@@ -28,11 +28,13 @@ A real-time hand exercise detection and feedback system using computer vision an
 Before you begin, make sure you have the following installed:
 
 ### Required Software:
+
 - **Python 3.8 or higher** (Download from [python.org](https://www.python.org/downloads/))
 - **Git** (Download from [git-scm.com](https://git-scm.com/downloads))
 - **Webcam** (Built-in or external USB camera)
 
 ### System Requirements:
+
 - **Operating System**: Windows 10/11, macOS, or Linux
 - **RAM**: Minimum 4GB, Recommended 8GB
 - **Storage**: At least 2GB free space
@@ -43,12 +45,14 @@ Before you begin, make sure you have the following installed:
 ### Step 1: Download the Project
 
 **Option A: Using Git (Recommended)**
+
 ```bash
 git clone <repository-url>
 cd final
 ```
 
 **Option B: Manual Download**
+
 1. Download the project ZIP file
 2. Extract it to a folder on your computer
 3. Open command prompt/terminal in that folder
@@ -56,6 +60,7 @@ cd final
 ### Step 2: Set Up Python Environment
 
 **For Windows:**
+
 1. Open Command Prompt as Administrator
 2. Navigate to your project folder:
    ```cmd
@@ -71,6 +76,7 @@ cd final
    ```
 
 **For macOS/Linux:**
+
 1. Open Terminal
 2. Navigate to your project folder:
    ```bash
@@ -94,6 +100,7 @@ pip install -r requirements.txt
 ```
 
 **If you encounter any errors:**
+
 1. Update pip first:
    ```bash
    python -m pip install --upgrade pip
@@ -125,6 +132,7 @@ python -c "import streamlit, cv2, mediapipe, sklearn; print('✅ All packages in
 ### Step 1: Prepare Your Environment
 
 1. **Activate your virtual environment** (if not already activated):
+
    - Windows: `hand_exercise_env\Scripts\activate`
    - macOS/Linux: `source hand_exercise_env/bin/activate`
 
@@ -162,10 +170,12 @@ The application has three main sections:
 ### How to Use
 
 1. **Start Detection**:
+
    - Check the "Run Hand Detection" checkbox
    - Allow camera access when prompted
 
 2. **Perform Exercises**:
+
    - Position your hand in front of the camera
    - Perform any of the 8 supported exercises
    - The system will detect the exercise and show feedback
@@ -187,22 +197,27 @@ The application has three main sections:
 ### Common Issues and Solutions
 
 **Issue 1: Camera not working**
+
 - **Solution**: Check camera permissions in your browser
 - **Alternative**: Try refreshing the page or restarting the application
 
 **Issue 2: "Module not found" errors**
+
 - **Solution**: Make sure your virtual environment is activated
 - **Alternative**: Reinstall requirements: `pip install -r requirements.txt`
 
 **Issue 3: Application runs but no detection**
+
 - **Solution**: Check if your webcam is working in other applications
 - **Alternative**: Try changing camera index in the code (line 625: `cv2.VideoCapture(0)` instead of `cv2.VideoCapture(1)`)
 
 **Issue 4: Slow performance**
+
 - **Solution**: Close other applications using the camera
 - **Alternative**: Reduce camera resolution in the code
 
 **Issue 5: "Permission denied" errors**
+
 - **Solution**: Run command prompt/terminal as administrator
 - **Alternative**: Check folder permissions
 
@@ -308,4 +323,4 @@ To contribute to this project:
 
 ---
 
-**Note**: This application is designed for educational and rehabilitation purposes. Always consult with healthcare professionals for proper exercise guidance. 
+**Note**: This application is designed for educational and rehabilitation purposes. Always consult with healthcare professionals for proper exercise guidance.

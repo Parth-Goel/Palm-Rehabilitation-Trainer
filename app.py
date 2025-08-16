@@ -570,8 +570,17 @@ def detect_hand_with_opencv(image):
         hull = cv2.convexHull(hand_contour, returnPoints=True)
         
         # Get defects to identify finger valleys
-        hull_indices = cv2.convexHull(hand_contour, returnPoints=False)
-        defects = cv2.convexityDefects(hand_contour, hull_indices)
+        # Handle potential errors with convexity defects calculation
+        try:
+            hull_indices = cv2.convexHull(hand_contour, returnPoints=False)
+            # Make sure hull_indices is valid before calculating defects
+            if len(hull_indices) >= 3:  # Need at least 3 points for convexity defects
+                defects = cv2.convexityDefects(hand_contour, hull_indices)
+            else:
+                defects = None
+        except Exception as hull_error:
+            print(f"Hull calculation error: {hull_error}")
+            defects = None
         
         # Create a MediaPipe-like landmark structure with 21 points
         # This is a simplified representation, not as accurate as MediaPipe
@@ -645,38 +654,49 @@ def detect_hand_with_opencv(image):
         normalized_landmarks[18].y = (y + h*0.25)/h_img
         
         # Try to detect fingertips from the convex hull
-        if len(hull) >= 5:  # We need at least 5 points for 5 fingertips
-            # Sort hull points by y-coordinate (fingertips are usually on top)
-            sorted_hull = sorted(hull, key=lambda p: p[0][1])
-            
-            # Take the top 5 points as potential fingertips
-            for i, point in enumerate(sorted_hull[:5]):
-                fingertip_x, fingertip_y = point[0]
+        try:
+            if hull is not None and len(hull) >= 5:  # We need at least 5 points for 5 fingertips
+                # Sort hull points by y-coordinate (fingertips are usually on top)
+                sorted_hull = sorted(hull, key=lambda p: p[0][1])
                 
-                # Assign to finger tips 
-                # Landmark indices: 4=thumb tip, 8=index tip, 12=middle tip, 16=ring tip, 20=pinky tip
-                tip_indices = [4, 8, 12, 16, 20]
-                if i < len(tip_indices):
-                    idx = tip_indices[i]
-                    normalized_landmarks[idx].x = fingertip_x/w_img
-                    normalized_landmarks[idx].y = fingertip_y/h_img
+                # Take the top 5 points as potential fingertips
+                for i, point in enumerate(sorted_hull[:5]):
+                    if point is not None and len(point) > 0:
+                        fingertip_x, fingertip_y = point[0]
+                        
+                        # Assign to finger tips 
+                        # Landmark indices: 4=thumb tip, 8=index tip, 12=middle tip, 16=ring tip, 20=pinky tip
+                        tip_indices = [4, 8, 12, 16, 20]
+                        if i < len(tip_indices):
+                            idx = tip_indices[i]
+                            normalized_landmarks[idx].x = fingertip_x/w_img
+                            normalized_landmarks[idx].y = fingertip_y/h_img
+        except Exception as hull_error:
+            print(f"Error processing hull points: {hull_error}")
+            # Continue without fingertip detection
         
         # Additional refinement if defects are available
-        if defects is not None and len(defects) > 0:
-            # Sort defects by depth (biggest depth usually means finger valleys)
-            sorted_defects = sorted(defects, key=lambda d: d[0][3], reverse=True)
-            
-            # Use the deepest defects as knuckles (between fingers)
-            for i, defect in enumerate(sorted_defects[:4]):
-                _, _, far_idx, _ = defect[0]
-                far_x, far_y = hand_contour[far_idx][0]
+        try:
+            if defects is not None and len(defects) > 0:
+                # Sort defects by depth (biggest depth usually means finger valleys)
+                sorted_defects = sorted(defects, key=lambda d: d[0][3], reverse=True)
                 
-                # Place at approximate knuckle positions
-                knuckle_indices = [3, 7, 11, 15]  # Middle knuckles of each finger
-                if i < len(knuckle_indices):
-                    idx = knuckle_indices[i]
-                    normalized_landmarks[idx].x = far_x/w_img
-                    normalized_landmarks[idx].y = far_y/h_img
+                # Use the deepest defects as knuckles (between fingers)
+                for i, defect in enumerate(sorted_defects[:4]):
+                    _, _, far_idx, _ = defect[0]
+                    # Verify index is valid before accessing
+                    if 0 <= far_idx < len(hand_contour):
+                        far_x, far_y = hand_contour[far_idx][0]
+                        
+                        # Place at approximate knuckle positions
+                        knuckle_indices = [3, 7, 11, 15]  # Middle knuckles of each finger
+                        if i < len(knuckle_indices):
+                            idx = knuckle_indices[i]
+                            normalized_landmarks[idx].x = far_x/w_img
+                            normalized_landmarks[idx].y = far_y/h_img
+        except Exception as defect_error:
+            print(f"Error processing defects: {defect_error}")
+            # Continue without defect refinement
         
         return normalized_landmarks, hand_contour
     
@@ -1011,40 +1031,84 @@ def main():
         cap = None
         if camera_selection == "Auto-detect (recommended)":
             # Try multiple camera indices (0, 1, 2, 3) to find one that works
+            # Use different methods to try to connect to the camera
             camera_indices = [0, 1, 2, 3]
             
+            # First try with DirectShow backend on Windows (this often helps on Windows systems)
             for idx in camera_indices:
                 try:
-                    with st.spinner(f"Trying to connect to camera {idx}..."):
-                        cap = cv2.VideoCapture(idx)
+                    with st.spinner(f"Trying to connect to camera {idx} with DirectShow..."):
+                        # Try with DirectShow backend
+                        cap = cv2.VideoCapture(idx, cv2.CAP_DSHOW)
+                        # Set lower resolution to improve compatibility
+                        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+                        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
                         # Read a test frame to ensure it's working
                         ret, test_frame = cap.read()
                         if ret and test_frame is not None and test_frame.size > 0:
-                            st.success(f"✅ Successfully connected to camera {idx}")
+                            st.success(f"✅ Successfully connected to camera {idx} with DirectShow")
                             break
                         else:
                             cap.release()
                             cap = None
                 except Exception as e:
-                    st.warning(f"❌ Could not open camera {idx}: {e}")
                     if cap:
                         cap.release()
                         cap = None
                     continue
+            
+            # If DirectShow failed, try the default backend
+            if cap is None:
+                for idx in camera_indices:
+                    try:
+                        with st.spinner(f"Trying to connect to camera {idx} with default backend..."):
+                            cap = cv2.VideoCapture(idx)
+                            # Set lower resolution to improve compatibility
+                            cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+                            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+                            # Read a test frame to ensure it's working
+                            ret, test_frame = cap.read()
+                            if ret and test_frame is not None and test_frame.size > 0:
+                                st.success(f"✅ Successfully connected to camera {idx}")
+                                break
+                            else:
+                                cap.release()
+                                cap = None
+                    except Exception as e:
+                        st.warning(f"❌ Could not open camera {idx}: {e}")
+                        if cap:
+                            cap.release()
+                            cap = None
+                        continue
         else:
             # User selected a specific camera
             idx = int(camera_selection.split(" ")[1])
             try:
-                with st.spinner(f"Connecting to camera {idx}..."):
-                    cap = cv2.VideoCapture(idx)
+                # First try DirectShow on Windows
+                with st.spinner(f"Connecting to camera {idx} with DirectShow..."):
+                    cap = cv2.VideoCapture(idx, cv2.CAP_DSHOW)
+                    # Set lower resolution to improve compatibility
+                    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+                    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
                     ret, test_frame = cap.read()
                     if ret and test_frame is not None and test_frame.size > 0:
-                        st.success(f"✅ Successfully connected to camera {idx}")
+                        st.success(f"✅ Successfully connected to camera {idx} with DirectShow")
                     else:
-                        st.error(f"❌ Camera {idx} is not providing valid frames")
-                        if cap:
-                            cap.release()
-                            cap = None
+                        cap.release()
+                        # Try again with the default backend
+                        with st.spinner(f"Connecting to camera {idx} with default backend..."):
+                            cap = cv2.VideoCapture(idx)
+                            # Set lower resolution to improve compatibility
+                            cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+                            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+                            ret, test_frame = cap.read()
+                            if ret and test_frame is not None and test_frame.size > 0:
+                                st.success(f"✅ Successfully connected to camera {idx}")
+                            else:
+                                st.error(f"❌ Camera {idx} is not providing valid frames")
+                                if cap:
+                                    cap.release()
+                                    cap = None
             except Exception as e:
                 st.error(f"❌ Error connecting to camera {idx}: {e}")
                 if cap:
@@ -1055,6 +1119,23 @@ def main():
             st.error("❌ Could not connect to any camera")
             st.warning("If you are using a laptop, make sure your webcam is not being used by another application")
             st.warning("If you are using an external webcam, check if it's properly connected")
+            
+            # Add more troubleshooting information in an expandable section
+            with st.expander("📋 Camera Troubleshooting Tips"):
+                st.markdown("""
+                1. **Restart your browser or Streamlit application** - Sometimes the camera gets locked by a previous session
+                2. **Check camera permissions** - Make sure your browser has permission to access the camera
+                3. **Try a different browser** - Some browsers handle camera access better than others
+                4. **Close other applications** - Close applications like Zoom, Teams, or Skype that might be using the camera
+                5. **Check device manager** - On Windows, check if your camera is working properly in Device Manager
+                6. **Update camera drivers** - Outdated drivers can cause connection issues
+                7. **Try an external webcam** - If built-in webcam isn't working, try connecting an external one
+                """)
+            
+            # Button to try again with camera detection
+            if st.button("🔄 Try Again"):
+                st.experimental_rerun()
+                
             st.info("Please try the Demo Mode tab to see exercise examples without camera access")
             return
             
@@ -1065,29 +1146,60 @@ def main():
         st.info("- Keep your hand at a comfortable distance from the camera")
         st.info("- Move slowly to allow detection to work better")
             
-        while cap.isOpened():
-            ret, frame = cap.read()
-            if not ret:
-                st.error("Failed to capture frame from webcam.")
-                break
-            
-            predictions, hand_landmarks_list = predict_exercise(frame, model, scaler)
-            annotated_frame = annotate_image(frame, predictions, hand_landmarks_list)
-
-            # Display the live feed
-            FRAME_WINDOW.image(cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB), use_column_width=True)
-
-            # Update the reference image based on the detected exercise
-            if predictions:
-                exercise_name = predictions[0].replace("-", "_")
-                reference_image_path = f"images/{exercise_name}.jpg"
-                resized_image = resize_image(reference_image_path, width=450, height=350)  # Resize image
-                if resized_image:
-                    exercise_image.image(resized_image, caption=f"Reference: {predictions[0]}", use_column_width=False)
-                else:
-                    exercise_image.image(default_image, caption="No reference available", use_column_width=False)
+        # Add stop button to properly release camera
+        stop_button = st.button("⏹️ Stop Camera")
         
-        cap.release()
+        # Add a counter to handle temporary disconnections
+        frame_error_count = 0
+        max_frame_errors = 5  # Number of consecutive errors before giving up
+        
+        while cap.isOpened() and not stop_button:
+            try:
+                ret, frame = cap.read()
+                
+                if not ret or frame is None or frame.size == 0:
+                    frame_error_count += 1
+                    if frame_error_count >= max_frame_errors:
+                        st.error("⚠️ Camera disconnected or not providing frames. Please restart the application.")
+                        break
+                    # Skip this frame and try again
+                    continue
+                else:
+                    # Reset error counter on successful frame
+                    frame_error_count = 0
+                
+                predictions, hand_landmarks_list = predict_exercise(frame, model, scaler)
+                annotated_frame = annotate_image(frame, predictions, hand_landmarks_list)
+
+                # Display the live feed
+                FRAME_WINDOW.image(cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB), use_column_width=True)
+
+                # Update the reference image based on the detected exercise
+                if predictions:
+                    exercise_name = predictions[0].replace("-", "_")
+                    reference_image_path = f"images/{exercise_name}.jpg"
+                    resized_image = resize_image(reference_image_path, width=450, height=350)  # Resize image
+                    if resized_image:
+                        exercise_image.image(resized_image, caption=f"Reference: {predictions[0]}", use_column_width=False)
+                    else:
+                        exercise_image.image(default_image, caption="No reference available", use_column_width=False)
+            
+            except Exception as e:
+                st.error(f"Camera error: {str(e)}")
+                # Try to recover by reacquiring the camera
+                try:
+                    cap.release()
+                    cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)  # Try to reconnect with DirectShow
+                    if not cap.isOpened():
+                        st.error("Failed to reacquire camera. Please restart the application.")
+                        break
+                except Exception:
+                    st.error("Failed to recover from camera error. Please restart the application.")
+                    break
+        
+        # Properly release the camera
+        if cap is not None:
+            cap.release()
         # Use try/except to handle the case when destroyAllWindows is not available (headless environments)
         try:
             cv2.destroyAllWindows()
