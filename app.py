@@ -559,6 +559,9 @@ def detect_hand_with_opencv(image):
         epsilon = 0.01 * cv2.arcLength(hand_contour, True)
         approx_hand = cv2.approxPolyDP(hand_contour, epsilon, True)
     
+    except:
+        print("Error occurred during hand detection")
+
     try:
         # Get the bounding box of the contour
         x, y, w, h = cv2.boundingRect(hand_contour)
