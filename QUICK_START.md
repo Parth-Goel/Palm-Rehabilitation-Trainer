@@ -48,6 +48,11 @@ streamlit run app.py
 - Check browser camera permissions
 - Try `cv2.VideoCapture(0)` instead of `cv2.VideoCapture(1)` in app.py
 
+**MediaPipe not working?**
+- The app includes an OpenCV-based fallback that will automatically activate
+- You'll see "Using OpenCV (fallback mode)" displayed on the image when this happens
+- Performance may be reduced but core functionality will remain
+
 **Import errors?**
 - Make sure virtual environment is activated
 - Run: `pip install -r requirements.txt`

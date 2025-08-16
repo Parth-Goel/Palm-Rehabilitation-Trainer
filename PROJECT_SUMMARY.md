@@ -7,11 +7,12 @@ The  Hand Rehabilitation System is a real-time computer vision application that 
 ## 🎯 Key Features
 
 ### Core Functionality
-- **Real-time Hand Detection**: 21-point MediaPipe hand landmark tracking
+- **Real-time Hand Detection**: 21-point MediaPipe hand landmark tracking with OpenCV-based fallback
 - **8 Exercise Types**: Comprehensive hand rehabilitation exercise library
 - **Live Feedback**: Real-time guidance and form correction
 - **Reference Images**: Visual guides for proper exercise form
 - **Machine Learning**: 92%+ accuracy Random Forest classification
+- **Cloud Compatibility**: Works in cloud environments through OpenCV fallback when MediaPipe is unavailable
 
 ### Technical Capabilities
 - **229 Feature Extraction**: 190 distance + 39 angle features

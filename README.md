@@ -4,12 +4,13 @@ A real-time hand exercise detection and feedback system using computer vision an
 
 ## 🎯 Features
 
-- **Real-time Hand Detection**: Uses MediaPipe for accurate hand landmark detection
+- **Real-time Hand Detection**: Uses MediaPipe for accurate hand landmark detection with OpenCV fallback for compatibility
 - **8 Exercise Types**: Supports multiple hand rehabilitation exercises
 - **Live Feedback**: Provides real-time guidance and corrections
 - **Reference Images**: Shows proper form for each exercise
 - **Machine Learning**: Uses Random Forest classifier for exercise classification
 - **User-friendly Interface**: Clean Streamlit web interface
+- **Cloud Compatible**: Works in cloud environments with OpenCV-based fallback when MediaPipe is unavailable
 
 ## 📋 Supported Exercises
 
